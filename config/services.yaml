@@ -1,0 +1,142 @@
+services:
+    _defaults:
+        autowire: false
+        autoconfigure: true
+
+    Dud\ContaoPdfPreview\Security\PdfSecurityScanner:
+        public: true
+        arguments:
+            - '@cache.app'
+            - '@?monolog.logger.contao.error'
+            - '%contao_pdf_preview.security.enabled%'
+            - '%contao_pdf_preview.security.max_file_size%'
+            - '%contao_pdf_preview.security.blocked_features%'
+            - '%contao_pdf_preview.security.allow_encrypted%'
+            - '%contao_pdf_preview.security.virus_scan%'
+            - '%contao_pdf_preview.security.require_virus_scan%'
+            - '%contao_pdf_preview.security.clamav_socket%'
+            - '%contao_pdf_preview.security.clamav_binary%'
+            - '%contao_pdf_preview.security.max_decompressed_size%'
+
+    Dud\ContaoPdfPreview\Image\ClientPreviewStore:
+        public: true
+        arguments:
+            - '@contao.image.imagine'
+            - '%kernel.project_dir%'
+            - '%contao.image.preview.target_dir%/pdf-client'
+
+    Dud\ContaoPdfPreview\Image\PdfPreviewGenerator:
+        public: true
+        arguments:
+            - !service_closure '@contao.image.preview_factory'
+            - !service_closure '@database_connection'
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@Dud\ContaoPdfPreview\Image\ClientPreviewStore'
+            - '@Dud\ContaoPdfPreview\Image\Preview\CliPdfPreviewProvider'
+            - '@contao.image.imagine'
+            - '%kernel.project_dir%'
+            - '%contao.image.preview.target_dir%/pdf-crop'
+            - '%contao_pdf_preview.preview_size%'
+            - '%contao_pdf_preview.default_page%'
+
+    # Kern der Integration: alle Bildausgaben von Contao laufen hierüber
+    Dud\ContaoPdfPreview\Image\PdfAwareImageFactory:
+        decorates: contao.image.factory
+        arguments:
+            - '@.inner'
+            - '@Dud\ContaoPdfPreview\Image\PdfPreviewGenerator'
+
+    # Sicherheitsschranke vor ALLEN Preview-Providern (auch Core-Downloads/Backend)
+    Dud\ContaoPdfPreview\Image\Preview\SecurityGuardPreviewProvider:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+        tags:
+            - { name: contao.preview_provider, priority: 4096 }
+
+    # Fallback-Renderer (pdftoppm/Ghostscript) nach Imagick, vor dem Platzhalter-Icon
+    Dud\ContaoPdfPreview\Image\Preview\CliPdfPreviewProvider:
+        arguments:
+            - '%contao_pdf_preview.cli_binary%'
+        tags:
+            - { name: contao.preview_provider, priority: -512 }
+
+    Dud\ContaoPdfPreview\EventListener\DataContainer\ImageFieldListener:
+        public: true
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@contao.framework'
+            - '%kernel.project_dir%'
+            - '%contao_pdf_preview.image_extensions%'
+            - '%contao.image.valid_extensions%'
+            - '%contao_pdf_preview.backend_fields%'
+            - '%contao_pdf_preview.excluded_fields%'
+
+    Dud\ContaoPdfPreview\EventListener\DataContainer\FilesListener:
+        public: true
+
+    Dud\ContaoPdfPreview\EventListener\DataContainer\PdfPreviewFieldListener:
+        public: true
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@Dud\ContaoPdfPreview\Image\PdfPreviewGenerator'
+            - '@Dud\ContaoPdfPreview\Image\ClientPreviewStore'
+            - '@contao.image.factory'
+            - '@router'
+            - '@request_stack'
+            - '@contao.csrf.token_manager'
+            - '@security.helper'
+            - '%kernel.project_dir%'
+            - '%contao_pdf_preview.preview_size%'
+
+    Dud\ContaoPdfPreview\EventListener\UploadListener:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@contao.framework'
+            - '%kernel.project_dir%'
+
+    Dud\ContaoPdfPreview\Controller\ContentElement\PdfPagesController:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Image\PdfPreviewGenerator'
+            - '@contao.image.studio'
+            - '@contao.image.factory'
+            - '%kernel.project_dir%'
+
+    Dud\ContaoPdfPreview\Controller\Backend\ClientPreviewController:
+        public: true
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@Dud\ContaoPdfPreview\Image\ClientPreviewStore'
+            - '@security.helper'
+            - '@contao.csrf.token_manager'
+            - '%contao.csrf_token_name%'
+            - '%kernel.project_dir%'
+            - '%contao.upload_path%'
+            - '@translator'
+        tags:
+            - controller.service_arguments
+
+    Dud\ContaoPdfPreview\Security\BlockedPdfRegistry:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '%kernel.project_dir%'
+            - '%contao.upload_path%'
+            - '%kernel.project_dir%/var/dud-pdf-preview/blocked.json'
+
+    # Findet auch per FTP/Deployment abgelegte PDFs
+    Dud\ContaoPdfPreview\Cron\PdfSecurityCron:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\BlockedPdfRegistry'
+
+    Dud\ContaoPdfPreview\EventListener\SystemMessagesListener:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\BlockedPdfRegistry'
+            - '@security.helper'
+
+    Dud\ContaoPdfPreview\Command\ScanCommand:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@Dud\ContaoPdfPreview\Security\BlockedPdfRegistry'
+            - '%kernel.project_dir%'
+            - '%contao.upload_path%'
+            - '%contao.image.preview.target_dir%'
+            - '@translator'

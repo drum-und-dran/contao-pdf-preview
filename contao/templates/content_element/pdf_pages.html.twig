@@ -1,0 +1,19 @@
+{% extends '@Contao/content_element/_base.html.twig' %}
+{% use '@Contao/component/_figure.html.twig' %}
+
+{#
+    PDF-Seiten als responsive Bilder (dud/contao-pdf-preview).
+    Jede Seite wird direkt als <figure> ausgegeben, ohne Listen-Markup.
+    Verfügbare Variablen: images (Figure[]), pages (int[]), items_per_row, pdf_path
+#}
+
+{% set attributes = attrs()
+    .addClass('content-pdf-pages--cols-' ~ items_per_row|default(1))
+    .mergeWith(attributes|default)
+%}
+
+{% block content %}
+    {% for figure in images %}
+        {{ block('figure_component') }}
+    {% endfor %}
+{% endblock %}

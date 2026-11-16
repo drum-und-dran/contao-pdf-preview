@@ -1,0 +1,7 @@
+.dud-pdfpreview__status { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 4px 0 10px; font-size: .875rem; line-height: 1.4; }
+.dud-pdfpreview__virus { font-weight: 600; }
+.dud-pdfpreview__virus.is-ok { color: var(--green, #589b0e); }
+.dud-pdfpreview__virus.is-missing { color: var(--orange, #c76d00); }
+.dud-pdfpreview__tools { margin: 8px 0 0; }
+.dud-pdfpreview__message:empty { display: none; }
+.dud-pdfpreview__blocked ul { margin: 6px 0 0 18px; list-style: disc; }
