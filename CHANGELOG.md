@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.1
+
+**Deutsch**
+
+- Herkunftsnachweise nach C2PA („Content Credentials“, z. B. von WeasyPrint 68 automatisch eingebettet) führen nicht mehr zur Sperre. Erkannt wird am Inhalt (JUMBF mit C2PA-Kennung), nicht am Namen.
+- Andere eingebettete Dateien werden mit Name, Typ und Größe gemeldet statt nur mit „/EmbeddedFile“.
+- Backend-Startseite: Hosting-Hinweise nur noch bei echten Problemen, ohne Hosting-Empfehlung. Ein fehlender Virenscanner erscheint nur noch in der Dateiverwaltung und entfällt mit `virus_scan: off`.
+- Meldung zu blockierten PDFs klarer und kürzer: Betroffen ist nur das Vorschaubild, der Download nicht. Einzahl und Mehrzahl werden unterschieden.
+- Darstellung der Hinweise in Contao 5.7 korrigiert (fehlende Leerzeichen).
+
+**English**
+
+- Proofs of origin according to C2PA ("Content Credentials", e.g. embedded automatically by WeasyPrint 68) no longer lead to blocking. They are recognized by their content (JUMBF with C2PA identifier), not by their name.
+- Other embedded files are reported with name, type and size instead of just "/EmbeddedFile".
+- Back end start page: hosting notices only for actual problems, without hosting recommendation. A missing virus scanner is only shown in the file manager and is omitted with `virus_scan: off`.
+- Message about blocked PDFs clearer and shorter: only the preview image is affected, not the download. Singular and plural are distinguished.
+- Display of the notices in Contao 5.7 fixed (missing spaces).
+
 ## 1.1.0
 
 **Deutsch**

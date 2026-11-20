@@ -36,7 +36,7 @@ use Symfony\Component\Process\Process;
  */
 class PdfSecurityScanner
 {
-    private const CACHE_VERSION = 'v4';
+    private const CACHE_VERSION = 'v5';
 
     /**
      * Ab diesem Verhältnis von entpackter zu gepackter Größe liegt eine
@@ -208,6 +208,11 @@ class PdfSecurityScanner
     public function hasVirusScanner(): bool
     {
         return null !== $this->clamavSocket && '' !== $this->clamavSocket || false !== $this->getClamBinary();
+    }
+
+    public function isVirusScanDisabled(): bool
+    {
+        return 'off' === $this->virusScan;
     }
 
     public function isVirusScanRequired(): bool
@@ -387,6 +392,87 @@ class PdfSecurityScanner
         if ($this->allowFormFeatures && (isset($findings->features['JS']) || isset($findings->features['JavaScript']))) {
             $this->collectScripts($decoded, $findings);
         }
+
+        if (isset($findings->features['EmbeddedFile']) || isset($findings->features['EmbeddedFiles'])) {
+            $this->collectEmbeddedFiles($decoded, $findings);
+        }
+    }
+
+    /**
+     * Sammelt die Dateispezifikationen eingebetteter Dateien (/EF) mit Name und Typ.
+     */
+    private function collectEmbeddedFiles(string $decoded, ScanFindings $findings): void
+    {
+        if (false === preg_match_all('#/EF\s*<<[^>]*?/(?:UF|F)\s+(\d+)\s+(\d+)\s+R#', $decoded, $matches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER)) {
+            $this->pcreFailed = true;
+
+            return;
+        }
+
+        foreach ($matches as $match) {
+            $pos = $match[0][1];
+
+            // Umgebendes Dictionary: ab dem letzten "obj" bzw. höchstens 1 KB davor
+            $window = substr($decoded, max(0, $pos - 1024), min(1024, $pos) + 512);
+            $objPos = strrpos(substr($window, 0, min(1024, $pos)), 'obj');
+            $window = false === $objPos ? $window : substr($window, $objPos);
+
+            $name = '';
+
+            if (preg_match('#/(?:UF|F)\s*\(#', $window, $n, PREG_OFFSET_CAPTURE)) {
+                $name = $this->toUtf8($this->parseLiteralString($window, $n[0][1] + \strlen($n[0][0]) - 1)[0]);
+            }
+
+            // MIME-Typ als Name (/text#2Fxml, nach dem Dekodieren /text/xml) oder als String
+            $type = preg_match('#/Subtype\s*(?:/([A-Za-z0-9.+\-]+(?:/[A-Za-z0-9.+\-]+)?)|\(([^)]*)\))#', $window, $t) ? $t[2] ?? '' ?: $t[1] : '';
+            $findings->embedded[$match[1][0].' '.$match[2][0]] = ['name' => $this->excerpt($name), 'type' => $this->excerpt($type)];
+        }
+    }
+
+    /**
+     * Herkunftsnachweise nach C2PA ("Content Credentials", z. B. von WeasyPrint,
+     * Adobe oder Kameras) sind JUMBF-Container mit Signaturen und Metadaten, keine
+     * ausführbaren Inhalte. Erkannt wird ausschließlich am Inhalt: äußere
+     * JUMBF-Box mit passender Länge und der C2PA-Kennung (UUID).
+     */
+    private function isC2paManifest(string $content): bool
+    {
+        if (\strlen($content) < 32 || 'jumb' !== substr($content, 4, 4) || 'jumd' !== substr($content, 12, 4)) {
+            return false;
+        }
+
+        $length = unpack('N', substr($content, 0, 4))[1] ?? 0;
+
+        return $length >= 32 && $length <= \strlen($content) && "c2pa\x00\x11\x00\x10\x80\x00\x00\xAA\x00\x38\x9B\x71" === substr($content, 16, 16);
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    private function evaluateEmbeddedFiles(string $data, ScanFindings $findings): array
+    {
+        // Name vorhanden, aber keine Dateispezifikation lesbar: fail closed
+        if (!$findings->embedded) {
+            return [[ScanReason::make('feature', 'EmbeddedFile')], []];
+        }
+
+        $reasons = [];
+        $c2pa = [];
+
+        foreach ($findings->embedded as $ref => $file) {
+            $content = $this->resolveObject($data, $ref, false);
+            $size = null === $content ? '?' : $this->formatBytes(\strlen($content));
+
+            if (null !== $content && $this->isC2paManifest($content)) {
+                $c2pa[] = $size;
+
+                continue;
+            }
+
+            $reasons[] = ScanReason::make('embedded_file', '' !== $file['name'] ? $file['name'] : $ref.' R', '' !== $file['type'] ? $file['type'] : '?', $size);
+        }
+
+        return [$reasons, $c2pa ? [ScanReason::make('c2pa', implode(', ', $c2pa))] : []];
     }
 
     /**
@@ -413,6 +499,14 @@ class PdfSecurityScanner
             [$scriptReasons, $scriptNotices] = $this->evaluateScripts($data, $findings);
             $reasons = [...$reasons, ...$scriptReasons];
             $notices = [...$notices, ...$scriptNotices];
+        }
+
+        if (isset($features['EmbeddedFile'])) {
+            unset($features['EmbeddedFile']);
+
+            [$fileReasons, $fileNotices] = $this->evaluateEmbeddedFiles($data, $findings);
+            $reasons = [...$reasons, ...$fileReasons];
+            $notices = [...$notices, ...$fileNotices];
         }
 
         if ($this->allowFormFeatures && isset($features['SubmitForm'])) {
@@ -501,7 +595,7 @@ class PdfSecurityScanner
     /**
      * Lädt ein indirektes Objekt (String oder Stream) aus der Datei.
      */
-    private function resolveObject(string $data, string $ref): string|null
+    private function resolveObject(string $data, string $ref, bool $text = true): string|null
     {
         [$number, $generation] = explode(' ', $ref);
 
@@ -534,7 +628,7 @@ class PdfSecurityScanner
         }
 
         if (!preg_match('#/Filter#', $dict)) {
-            return $this->toUtf8($raw[0]);
+            return $text ? $this->toUtf8($raw[0]) : $raw[0];
         }
 
         if (!preg_match('#/Filter\s*(?:/FlateDecode|\[\s*/FlateDecode\s*\])#', $dict)) {
@@ -543,7 +637,11 @@ class PdfSecurityScanner
 
         $result = $this->inflate($raw[0], 4 * 1048576);
 
-        return null === $result['error'] || $result['complete'] ? $this->toUtf8($result['data']) : null;
+        if (null !== $result['error'] && !$result['complete']) {
+            return null;
+        }
+
+        return $text ? $this->toUtf8($result['data']) : $result['data'];
     }
 
     /**

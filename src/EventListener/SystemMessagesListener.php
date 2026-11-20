@@ -47,41 +47,45 @@ class SystemMessagesListener
         $lang = $GLOBALS['TL_LANG']['dud_pdf_preview'] ?? [];
         $items = '';
 
+        // Je Eintrag ein einzelnes Inline-Element: Das Backend stellt Listen in den
+        // Hinweisen teils als Flexbox dar, die Leerzeichen zwischen Elementen entfernt
         foreach (\array_slice($blocked, 0, 20, true) as $path => $reasons) {
-            $details = implode('', array_map(static fn (string $r): string => '<li>'.StringUtil::specialchars(ScanReason::format($r)).'</li>', $reasons));
-            $items .= '<li><code>'.StringUtil::specialchars((string) $path).'</code><ul style="margin:2px 0 6px 18px;list-style:circle">'.$details.'</ul></li>';
+            $items .= '<li><span><code>'.StringUtil::specialchars((string) $path).'</code>: '.StringUtil::specialchars(ScanReason::formatAll($reasons)).'</span></li>';
         }
 
         if (\count($blocked) > 20) {
             $items .= '<li>…</li>';
         }
 
-        return $html.'<p class="tl_error">'.StringUtil::specialchars(\sprintf($lang['systemMessage'] ?? '%d PDF file(s) were blocked by the security check and will not be processed as images. Please review and delete them if necessary:', \count($blocked))).'</p><ul class="tl_listing" style="margin:0 0 12px 18px;list-style:disc">'.$items.'</ul>'
-            .'<p class="tl_info">'.StringUtil::specialchars($lang['systemHint'] ?? 'Harmless files can be approved after review on the command line: vendor/bin/contao-console contao-pdf-preview:scan --approve <file>').'</p>';
+        $intro = 1 === \count($blocked)
+            ? $lang['systemMessageOne'] ?? 'No preview image is created for 1 PDF file because of a finding of the security check. Downloading the file is not affected.'
+            : \sprintf($lang['systemMessage'] ?? 'No preview images are created for %d PDF files because of a finding of the security check. Downloading the files is not affected.', \count($blocked));
+
+        return $html.'<p class="tl_error">'.StringUtil::specialchars($intro).'</p>'
+            .'<ul class="tl_listing" style="margin:0 0 6px 18px;list-style:disc">'.$items.'</ul>'
+            .'<p class="tl_info" style="margin-bottom:12px">'.StringUtil::specialchars($lang['systemHint'] ?? 'Approval after review: vendor/bin/contao-console contao-pdf-preview:scan <file> --approve').'</p>';
     }
 
+    /**
+     * Nur echte Probleme, die die PDF-Vorschau verhindern. Alles Weitere zeigt die
+     * Dateiverwaltung bzw. contao-pdf-preview:check.
+     */
     private function renderHostingProblems(): string
     {
-        $problems = $this->hostingCheck?->getProblems() ?? [];
+        $problems = $this->hostingCheck?->getProblems(errorsOnly: true) ?? [];
 
         if (!$problems) {
             return '';
         }
 
         $items = '';
-        $class = 'tl_info';
 
         foreach ($problems as $problem) {
             $text = HostingCheck::describe($problem);
-            $items .= '<li><strong>'.StringUtil::specialchars($text['label']).': '.StringUtil::specialchars($text['value']).'</strong> – '.StringUtil::specialchars($text['recommendation']).'</li>';
-
-            if (HostingCheck::ERROR === $problem['status']) {
-                $class = 'tl_error';
-            }
+            $items .= '<li><span><strong>'.StringUtil::specialchars($text['label']).':</strong> '.StringUtil::specialchars($text['recommendation']).'</span></li>';
         }
 
-        return '<p class="'.$class.'">'.StringUtil::specialchars(HostingCheck::text('summary')).'</p>'
-            .'<ul class="tl_listing" style="margin:0 0 6px 18px;list-style:disc">'.$items.'</ul>'
-            .'<p class="tl_info" style="margin-bottom:12px">'.StringUtil::specialchars(HostingCheck::text('details')).'</p>';
+        return '<p class="tl_error">'.StringUtil::specialchars(HostingCheck::text('summary')).'</p>'
+            .'<ul class="tl_listing" style="margin:0 0 12px 18px;list-style:disc">'.$items.'</ul>';
     }
 }

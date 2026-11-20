@@ -36,4 +36,9 @@ final class ScanFindings
      * @var array<string, string> Verweise auf JavaScript in eigenen Objekten ("12 0")
      */
     public array $scriptRefs = [];
+
+    /**
+     * @var array<string, array{name: string, type: string}> eingebettete Dateien je Objektverweis
+     */
+    public array $embedded = [];
 }

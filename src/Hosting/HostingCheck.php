@@ -31,15 +31,14 @@ class HostingCheck
      */
     private const FALLBACK = [
         'title' => 'Hosting check for the PDF preview',
-        'summary' => 'The hosting limits the PDF preview. A more capable hosting is recommended for the full feature set:',
-        'details' => 'Details: vendor/bin/contao-console contao-pdf-preview:check',
+        'summary' => 'The PDF preview is limited on this server:',
         'status_ok' => 'OK',
         'status_warning' => 'Notice',
         'status_error' => 'Problem',
         'col_check' => 'Check',
         'col_status' => 'Status',
         'col_value' => 'Value',
-        'col_recommendation' => 'Recommendation',
+        'col_recommendation' => 'Effect',
         'label_renderer' => 'Server-side rendering',
         'label_proc_open' => 'External programs (proc_open)',
         'label_virus' => 'Virus scanner',
@@ -56,15 +55,15 @@ class HostingCheck
         'value_unlimited' => 'unlimited',
         'value_unknown' => 'cannot be determined',
         'value_missing' => 'missing',
-        'rec_renderer' => 'The server cannot render PDFs itself. Preview images are then only created in the browser of the editors when the file is opened in the file manager, PDFs uploaded via FTP only get a preview image afterwards. Recommended: hosting with Ghostscript or poppler-utils (pdftoppm) and proc_open enabled, alternatively Imagick with PDF support.',
-        'rec_proc_open' => 'proc_open is disabled (disable_functions). pdftoppm, Ghostscript and clamdscan cannot be called. Recommended: hosting with proc_open enabled.',
-        'rec_virus' => 'No virus scanner available, PDFs are only checked structurally. Recommended: hosting with ClamAV (clamd) or a dedicated server.',
-        'rec_memory' => 'The memory_limit of %s is tight. Large PDFs can only be checked and rendered to a limited extent. Recommended: at least 256 MB.',
-        'rec_time' => 'The maximum execution time of %s is short. Rendering large PDFs may be aborted, checking all files is done step by step over several cron runs. Recommended: at least 60 s.',
-        'rec_upload' => 'The upload limit of %s is low. Larger PDFs and page images rendered in the browser cannot be uploaded. Recommended: at least 32 MB.',
-        'rec_disk' => 'Only %s of disk space left. New preview images may soon no longer be saved. Recommended: extending the disk space or a larger hosting plan.',
-        'rec_zlib' => 'The PHP extension zlib is missing. Compressed PDF content cannot be checked, such PDFs are blocked. Recommended: hosting with zlib (standard with almost all providers).',
-        'rec_image' => 'Neither GD nor Imagick is available. Crops and pages rendered in the browser cannot be saved. Recommended: hosting with GD or Imagick.',
+        'rec_renderer' => 'The server cannot render PDFs itself. Preview images are created in the browser as soon as the PDF is opened in the file manager.',
+        'rec_proc_open' => 'proc_open is disabled, pdftoppm, Ghostscript and clamdscan cannot be called.',
+        'rec_virus' => 'No virus scanner found (neither clamav_socket configured nor clamdscan/clamscan available). PDFs are only checked structurally.',
+        'rec_memory' => 'memory_limit %s: very large PDFs can only be checked and rendered to a limited extent.',
+        'rec_time' => 'max_execution_time %s: rendering large PDFs may be aborted, checking all files is spread over several cron runs.',
+        'rec_upload' => 'Upload limit %s: larger PDFs and page images rendered in the browser cannot be uploaded.',
+        'rec_disk' => 'Only %s left: new preview images may soon no longer be saved.',
+        'rec_zlib' => 'PHP extension zlib missing: PDFs with compressed object streams are blocked.',
+        'rec_image' => 'Neither GD nor Imagick available: crops and pages rendered in the browser cannot be saved.',
         'cleanup' => 'Preview cache cleaned up: %s file(s) removed, %s freed.',
     ];
 
@@ -115,9 +114,9 @@ class HostingCheck
         $procOpen = ResourceLimits::functionAvailable('proc_open');
         $add('proc_open', $procOpen ? self::OK : self::WARNING, $procOpen ? 'available' : 'disabled', 'rec_proc_open');
 
-        // Virenscan
+        // Virenscan Mit virus_scan: off bewusst abgeschaltet: kein Hinweis
         $virus = $this->scanner->hasVirusScanner();
-        $add('virus', $virus ? self::OK : self::WARNING, $virus ? 'ClamAV' : 'none', 'rec_virus');
+        $add('virus', $virus || $this->scanner->isVirusScanDisabled() ? self::OK : self::WARNING, $virus ? 'ClamAV' : ($this->scanner->isVirusScanDisabled() ? 'disabled' : 'none'), 'rec_virus');
 
         // Arbeitsspeicher
         $memory = ResourceLimits::memoryLimit();
@@ -171,35 +170,41 @@ class HostingCheck
     }
 
     /**
-     * Nur Warnungen und Fehler, für die Backend-Startseite zwischengespeichert.
+     * Warnungen und Fehler, eine Stunde zwischengespeichert.
+     *
+     * @param list<string> $exclude
      *
      * @return list<array{key: string, status: string, value: string, recommendation: string|null}>
      */
-    public function getProblems(): array
+    public function getProblems(array $exclude = [], bool $errorsOnly = false): array
     {
+        $item = null;
+
         try {
             $item = $this->cache->getItem('dud_pdf_hosting_check');
-
-            if ($item->isHit() && \is_array($item->get())) {
-                return $item->get();
-            }
+            $problems = $item->isHit() && \is_array($item->get()) ? $item->get() : null;
         } catch (\Throwable) {
-            $item = null;
+            $problems = null;
         }
 
-        $problems = array_values(array_filter($this->run(), static fn (array $r): bool => self::OK !== $r['status']));
+        if (null === $problems) {
+            $problems = array_values(array_filter($this->run(), static fn (array $r): bool => self::OK !== $r['status']));
 
-        if (null !== $item) {
             try {
-                $item->set($problems);
-                $item->expiresAfter(3600);
+                if (null !== $item) {
+                    $item->set($problems);
+                    $item->expiresAfter(3600);
 
-                $this->cache->save($item);
+                    $this->cache->save($item);
+                }
             } catch (\Throwable) {
             }
         }
 
-        return $problems;
+        return array_values(array_filter(
+            $problems,
+            static fn (array $r): bool => !\in_array($r['key'], $exclude, true) && (!$errorsOnly || self::ERROR === $r['status']),
+        ));
     }
 
     private function imagickCanReadPdf(): bool

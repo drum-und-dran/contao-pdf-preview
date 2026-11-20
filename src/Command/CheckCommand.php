@@ -61,7 +61,6 @@ class CheckCommand extends Command
         }
 
         $rows = [];
-        $problems = 0;
 
         foreach ($this->check->run(true) as $result) {
             $text = HostingCheck::describe($result);
@@ -72,19 +71,11 @@ class CheckCommand extends Command
                 default => 'error',
             };
 
-            if (HostingCheck::OK !== $result['status']) {
-                ++$problems;
-            }
-
             $rows[] = [$text['label'], '<'.$tag.'>'.$text['status'].'</'.$tag.'>', $text['value'], wordwrap($text['recommendation'], 70)];
         }
 
         $io->table([HostingCheck::text('col_check'), HostingCheck::text('col_status'), HostingCheck::text('col_value'), HostingCheck::text('col_recommendation')], $rows);
         $io->note('PHP '.PHP_VERSION.' ('.\PHP_SAPI.'). Web requests may use different limits than the console (php.ini of PHP-FPM).');
-
-        if ($problems > 0) {
-            $io->warning(HostingCheck::text('summary'));
-        }
 
         return Command::SUCCESS;
     }

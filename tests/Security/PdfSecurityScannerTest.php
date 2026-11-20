@@ -191,6 +191,33 @@ class PdfSecurityScannerTest extends TestCase
         $this->assertSame(['feature|JavaScript'], $result->reasons);
     }
 
+    public function testC2paManifestIsAcceptedOnlyByContent(): void
+    {
+        // Wie WeasyPrint 68: /AF-Anhang "Content Credentials" mit JUMBF-Inhalt
+        $jumbf = "\x00\x00\x00\x00jumb\x00\x00\x00\x1ejumdc2pa\x00\x11\x00\x10\x80\x00\x00\xAA\x00\x38\x9B\x71\x03c2pa\x00".str_repeat("\x01", 64);
+        $jumbf = pack('N', \strlen($jumbf)).substr($jumbf, 4);
+
+        $result = $this->scanner()->scan($this->file(self::pdfWithAttachment($jumbf, 'Content Credentials', '/AFRelationship/C2PA_Manifest/Subtype(application/c2pa)')));
+
+        $this->assertTrue($result->safe, implode(', ', $result->reasons));
+        $this->assertStringContainsString('c2pa|', implode(' ', $result->notices));
+
+        // Gleiche Bezeichnung, aber kein C2PA-Inhalt: bleibt gesperrt, mit Name und Typ
+        $result = $this->scanner()->scan($this->file(self::pdfWithAttachment("MZ\x90\x00".str_repeat('A', 60), 'Content Credentials', '/AFRelationship/C2PA_Manifest/Subtype(application/c2pa)')));
+
+        $this->assertFalse($result->safe);
+        $this->assertStringContainsString('embedded_file|Content Credentials|application/c2pa|', implode(' ', $result->reasons));
+    }
+
+    public function testRegularAttachmentIsReportedWithNameTypeAndSize(): void
+    {
+        $result = $this->scanner()->scan($this->file(self::pdfWithAttachment(str_repeat('<xml/>', 300), 'factur-x.xml', '/Subtype/text#2Fxml')));
+
+        $this->assertFalse($result->safe);
+        $this->assertSame(['embedded_file|factur-x.xml|text/xml|2 KB'], $result->reasons);
+        $this->assertSame('Embedded file "factur-x.xml" (text/xml, 2 KB)', ScanReason::format($result->reasons[0]));
+    }
+
     public function testSubmitFormIsANotice(): void
     {
         $result = $this->scanner()->scan($this->file(PdfFactory::withObject('<< /S /SubmitForm /F (https://example.org) >>')));
@@ -343,5 +370,16 @@ class PdfSecurityScannerTest extends TestCase
         file_put_contents($file, $content);
 
         return $file;
+    }
+
+    private static function pdfWithAttachment(string $content, string $name, string $extra): string
+    {
+        return PdfFactory::build([
+            '<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [('.$name.') 5 0 R] >> >> /AF [5 0 R] >>',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>',
+            '<< /Length '.\strlen($content)." >>\nstream\n".$content."\nendstream",
+            '<< /Type /Filespec /F ('.$name.') /UF ('.$name.') /EF << /F 4 0 R >> '.$extra.' >>',
+        ]);
     }
 }

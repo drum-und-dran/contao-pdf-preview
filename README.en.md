@@ -61,7 +61,7 @@ Rendered pages are cached in `assets/previews`. When the PDF is replaced, the pr
 
 ### Hosting check
 
-The extension detects the capabilities and limits of the hosting and adapts to them: memory (`memory_limit`), maximum execution time, upload limit, free disk space, disabled functions (`proc_open`), available renderers, virus scanner and PHP extensions. If the hosting limits the PDF preview, the back end start page (for administrators) and the file manager show which limit is affected, what it means and which hosting features are recommended.
+The extension detects the capabilities and limits of the hosting and adapts to them: memory (`memory_limit`), maximum execution time, upload limit, free disk space, disabled functions (`proc_open`), available renderers, virus scanner and PHP extensions. Actual problems (e.g. missing PHP extensions, hardly any disk space left) are shown on the back end start page, further limitations with their effect in the file manager.
 
 ```bash
 vendor/bin/contao-console contao-pdf-preview:check
@@ -93,6 +93,8 @@ PDFs are a popular attack vector. The extension therefore checks **every PDF bef
 5. **Virus scan with ClamAV**, via the clamd socket, `clamdscan` or `clamscan`. Can optionally be made mandatory.
 
 **Fillable forms:** Form editors (Acrobat, LibreOffice and others) add JavaScript to date, number and calculation fields that only calls the built-in Acrobat form functions (e.g. `AFDate_FormatEx("dd.mm.yyyy")`). This code is read completely, also from compressed and separate objects, and checked against a fixed list of these functions. If only fixed values are passed, the PDF is harmless and merely gets a notice. Any other code is blocked with an excerpt. Submit buttons (`SubmitForm`) are treated as a notice as well. With `allow_form_features: false`, any JavaScript is blocked.
+
+**Embedded files:** attachments are reported with name, type and size and blocked. Proofs of origin according to C2PA ("Content Credentials", e.g. from WeasyPrint) are the exception: they are recognized by their content and only result in a notice.
 
 **Clear messages:** Every finding names the specific cause, e.g. the affected object, the position where decompression stops, the zlib error and how many objects are readable, or an excerpt of the objectionable JavaScript code.
 

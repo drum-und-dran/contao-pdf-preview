@@ -148,7 +148,7 @@ class PdfPreviewFieldListener
             .$virus
             .'</p>';
 
-        if ($hosting = $this->hostingCheck?->getProblems()) {
+        if ($hosting = $this->hostingCheck?->getProblems(exclude: ['renderer', 'virus'])) {
             $html .= '<details class="dud-pdfpreview__hosting"><summary>'.StringUtil::specialchars(HostingCheck::text('summary')).'</summary><ul>'
                 .implode(
                     '',
@@ -156,7 +156,7 @@ class PdfPreviewFieldListener
                         static function (array $problem): string {
                             $text = HostingCheck::describe($problem);
 
-                            return '<li><strong>'.StringUtil::specialchars($text['label'].': '.$text['value']).'</strong> – '.StringUtil::specialchars($text['recommendation']).'</li>';
+                            return '<li><span><strong>'.StringUtil::specialchars($text['label']).':</strong> '.StringUtil::specialchars($text['recommendation']).'</span></li>';
                         },
                         $hosting,
                     ),

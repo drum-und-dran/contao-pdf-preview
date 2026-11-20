@@ -61,7 +61,7 @@ Gerenderte Seiten werden in `assets/previews` zwischengespeichert. Wird die PDF 
 
 ### Hosting-Prüfung
 
-Die Erweiterung erkennt die Möglichkeiten und Grenzen des Hostings und passt sich daran an: Arbeitsspeicher (`memory_limit`), maximale Laufzeit, Upload-Limit, freier Speicherplatz, deaktivierte Funktionen (`proc_open`), vorhandene Renderer, Virenscanner und PHP-Erweiterungen. Schränkt das Hosting die PDF-Vorschau ein, zeigen die Backend-Startseite (für Administratoren) und die Dateiverwaltung konkret, welche Grenze betroffen ist, was das bedeutet und welche Hosting-Ausstattung empfehlenswert ist.
+Die Erweiterung erkennt die Möglichkeiten und Grenzen des Hostings und passt sich daran an: Arbeitsspeicher (`memory_limit`), maximale Laufzeit, Upload-Limit, freier Speicherplatz, deaktivierte Funktionen (`proc_open`), vorhandene Renderer, Virenscanner und PHP-Erweiterungen. Echte Probleme (z. B. fehlende PHP-Erweiterungen, kaum noch Speicherplatz) erscheinen auf der Backend-Startseite, weitere Einschränkungen mit ihrer Auswirkung in der Dateiverwaltung.
 
 ```bash
 vendor/bin/contao-console contao-pdf-preview:check
@@ -93,6 +93,8 @@ PDFs sind ein beliebter Angriffsvektor. Die Erweiterung prüft deshalb **jede PD
 5. **Virenscan mit ClamAV**, wahlweise über den clamd-Socket, `clamdscan` oder `clamscan`. Optional als Pflicht konfigurierbar.
 
 **Ausfüllbare Formulare:** Formular-Editoren (Acrobat, LibreOffice u. a.) hinterlegen für Datums-, Zahlen- und Berechnungsfelder JavaScript, das ausschließlich die eingebauten Acrobat-Formularfunktionen aufruft (z. B. `AFDate_FormatEx("dd.mm.yyyy")`). Dieser Code wird vollständig gelesen, auch aus komprimierten und ausgelagerten Objekten, und gegen eine feste Liste dieser Funktionen geprüft. Werden nur feste Werte übergeben, ist die PDF unbedenklich und erhält lediglich einen Hinweis. Jeder andere Code wird mit einem Auszug blockiert. Absende-Schaltflächen (`SubmitForm`) gelten ebenfalls als Hinweis. Mit `allow_form_features: false` wird jedes JavaScript blockiert.
+
+**Eingebettete Dateien:** Anhänge werden mit Name, Typ und Größe gemeldet und blockiert. Ausnahme sind Herkunftsnachweise nach C2PA („Content Credentials“, z. B. von WeasyPrint), die am Inhalt erkannt werden und nur einen Hinweis erzeugen.
 
 **Eindeutige Meldungen:** Jeder Befund nennt die konkrete Ursache, z. B. das betroffene Objekt, die Stelle, an der das Entpacken abbricht, den zlib-Fehler und wie viele Objekte lesbar sind, oder den Auszug des beanstandeten JavaScript-Codes.
 
