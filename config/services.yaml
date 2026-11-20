@@ -17,6 +17,14 @@ services:
             - '%contao_pdf_preview.security.clamav_socket%'
             - '%contao_pdf_preview.security.clamav_binary%'
             - '%contao_pdf_preview.security.max_decompressed_size%'
+            - '%contao_pdf_preview.security.allow_form_features%'
+            - '@Dud\ContaoPdfPreview\Security\PdfApprovals'
+
+    # Manuelle Freigaben (contao-pdf-preview:scan --approve)
+    Dud\ContaoPdfPreview\Security\PdfApprovals:
+        public: true
+        arguments:
+            - '%kernel.project_dir%/var/dud-pdf-preview/approved.json'
 
     Dud\ContaoPdfPreview\Image\ClientPreviewStore:
         public: true
@@ -38,6 +46,7 @@ services:
             - '%contao.image.preview.target_dir%/pdf-crop'
             - '%contao_pdf_preview.preview_size%'
             - '%contao_pdf_preview.default_page%'
+            - '%kernel.project_dir%/var/dud-pdf-preview/server-previews.txt'
 
     # Kern der Integration: alle Bildausgaben von Contao laufen hierüber
     Dud\ContaoPdfPreview\Image\PdfAwareImageFactory:
@@ -87,12 +96,14 @@ services:
             - '@security.helper'
             - '%kernel.project_dir%'
             - '%contao_pdf_preview.preview_size%'
+            - '@Dud\ContaoPdfPreview\Hosting\HostingCheck'
 
     Dud\ContaoPdfPreview\EventListener\UploadListener:
         arguments:
             - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
             - '@contao.framework'
             - '%kernel.project_dir%'
+            - '@Dud\ContaoPdfPreview\Security\BlockedPdfRegistry'
 
     Dud\ContaoPdfPreview\Controller\ContentElement\PdfPagesController:
         arguments:
@@ -131,11 +142,42 @@ services:
         arguments:
             - '@Dud\ContaoPdfPreview\Security\BlockedPdfRegistry'
             - '@security.helper'
+            - '@Dud\ContaoPdfPreview\Hosting\HostingCheck'
+
+    # Möglichkeiten und Grenzen des Hostings
+    Dud\ContaoPdfPreview\Hosting\HostingCheck:
+        public: true
+        arguments:
+            - '@Dud\ContaoPdfPreview\Image\Preview\CliPdfPreviewProvider'
+            - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
+            - '@cache.app'
+            - '%kernel.project_dir%'
+            - '%contao.image.preview.target_dir%'
+            - '%contao_pdf_preview.security.max_file_size%'
+
+    # Hält den Speicherbedarf der Vorschauen klein
+    Dud\ContaoPdfPreview\Image\PreviewCleaner:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Image\PdfPreviewGenerator'
+            - '@Dud\ContaoPdfPreview\Image\ClientPreviewStore'
+            - '%kernel.project_dir%'
+            - '%contao.upload_path%'
+
+    Dud\ContaoPdfPreview\Cron\PreviewCleanupCron:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Image\PreviewCleaner'
+
+    Dud\ContaoPdfPreview\Command\CheckCommand:
+        arguments:
+            - '@Dud\ContaoPdfPreview\Hosting\HostingCheck'
+            - '@Dud\ContaoPdfPreview\Image\PreviewCleaner'
+            - '@contao.framework'
 
     Dud\ContaoPdfPreview\Command\ScanCommand:
         arguments:
             - '@Dud\ContaoPdfPreview\Security\PdfSecurityScanner'
             - '@Dud\ContaoPdfPreview\Security\BlockedPdfRegistry'
+            - '@Dud\ContaoPdfPreview\Security\PdfApprovals'
             - '%kernel.project_dir%'
             - '%contao.upload_path%'
             - '%contao.image.preview.target_dir%'

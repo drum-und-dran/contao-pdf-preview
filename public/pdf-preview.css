@@ -5,3 +5,8 @@
 .dud-pdfpreview__tools { margin: 8px 0 0; }
 .dud-pdfpreview__message:empty { display: none; }
 .dud-pdfpreview__blocked ul { margin: 6px 0 0 18px; list-style: disc; }
+.dud-pdfpreview__notices { margin: 0 0 10px; }
+.dud-pdfpreview__notices ul { margin: 4px 0 0 18px; list-style: disc; }
+.dud-pdfpreview__hosting { margin: 0 0 10px; font-size: .875rem; }
+.dud-pdfpreview__hosting summary { cursor: pointer; color: var(--orange, #c76d00); }
+.dud-pdfpreview__hosting ul { margin: 4px 0 0 18px; list-style: disc; }

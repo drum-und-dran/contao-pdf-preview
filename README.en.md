@@ -59,6 +59,25 @@ If the server cannot render, the back end automatically renders the page images 
 
 Rendered pages are cached in `assets/previews`. When the PDF is replaced, the previews are regenerated automatically.
 
+### Hosting check
+
+The extension detects the capabilities and limits of the hosting and adapts to them: memory (`memory_limit`), maximum execution time, upload limit, free disk space, disabled functions (`proc_open`), available renderers, virus scanner and PHP extensions. If the hosting limits the PDF preview, the back end start page (for administrators) and the file manager show which limit is affected, what it means and which hosting features are recommended.
+
+```bash
+vendor/bin/contao-console contao-pdf-preview:check
+```
+
+With tight resources, the extension works step by step instead of aborting: with a short execution time, checking all PDFs is spread over several cron runs, and the memory used for decompression depends on the free memory.
+
+### Disk space
+
+Preview images should not fill up the web space. A **daily cron job** therefore removes:
+- previews of deleted or replaced PDFs (also files replaced via FTP)
+- crops that have not been used for 30 days (they are recreated on demand)
+- leftover temporary files
+
+Pages rendered in the browser are stored as JPEG (about 80 % smaller than PNG). Manually: `contao-pdf-preview:check --cleanup`. Previews created before version 1.1.0 can be removed once with `contao-pdf-preview:scan --purge-previews`.
+
 ---
 
 ## Security
@@ -68,10 +87,24 @@ PDFs are a popular attack vector. The extension therefore checks **every PDF bef
 **Multi-level check (principle: block when in doubt):**
 
 1. **Size limit** (default: 50 MB)
-2. **Strict structure check**: PDF header at the start of the file, end-of-file marker present. Polyglot files and manipulated files are rejected.
+2. **Strict structure check**: PDF header at the start of the file, end-of-file marker present. Polyglot files and manipulated files are rejected. Files wrongly saved as `.pdf` are named with their actual format (e.g. PNG, HTML).
 3. **Encrypted PDFs** are blocked because their content cannot be inspected.
-4. **Active content** is detected and blocked: JavaScript, launch actions, embedded files, XFA forms, RichMedia/Flash, SubmitForm, ImportData, GoToE. This also applies to **obfuscated names** (`/J#61vaScript`) and to content in **compressed object streams**. Uninspectable streams and **compression bombs** are blocked as well.
+4. **Active content** is detected and blocked: JavaScript, launch actions, embedded files, XFA forms, RichMedia/Flash, ImportData, GoToE. This also applies to **obfuscated names** (`/J#61vaScript`) and to content in **compressed object streams**. Uninspectable streams and **compression bombs** are blocked as well. A compression bomb is detected by the ratio of compressed to decompressed size (from 1:200, regular PDFs reach about 1:30), not by a fixed size.
 5. **Virus scan with ClamAV**, via the clamd socket, `clamdscan` or `clamscan`. Can optionally be made mandatory.
+
+**Fillable forms:** Form editors (Acrobat, LibreOffice and others) add JavaScript to date, number and calculation fields that only calls the built-in Acrobat form functions (e.g. `AFDate_FormatEx("dd.mm.yyyy")`). This code is read completely, also from compressed and separate objects, and checked against a fixed list of these functions. If only fixed values are passed, the PDF is harmless and merely gets a notice. Any other code is blocked with an excerpt. Submit buttons (`SubmitForm`) are treated as a notice as well. With `allow_form_features: false`, any JavaScript is blocked.
+
+**Clear messages:** Every finding names the specific cause, e.g. the affected object, the position where decompression stops, the zlib error and how many objects are readable, or an excerpt of the objectionable JavaScript code.
+
+**Manual approval:** An administrator can approve a reviewed file despite a finding:
+
+```bash
+vendor/bin/contao-console contao-pdf-preview:scan files/form.pdf --approve
+vendor/bin/contao-console contao-pdf-preview:scan --approvals                 # all approvals
+vendor/bin/contao-console contao-pdf-preview:scan files/form.pdf --revoke
+```
+
+The approval applies to exactly this file content (SHA-256) and expires as soon as the file is changed. The virus scan still runs. Virus findings, files that are not PDFs and polyglot files can never be approved.
 
 **Further protection:**
 - Ghostscript always runs with `-dSAFER`, all external processes run with a time limit and without a shell (no command injection).
@@ -169,8 +202,9 @@ contao_pdf_preview:
     security:
         enabled: true
         max_file_size: 52428800
-        max_decompressed_size: 104857600
+        max_decompressed_size: 0    # 0 = automatic, based on free memory
         blocked_features: [JavaScript, JS, Launch, EmbeddedFile, EmbeddedFiles, RichMedia, XFA, SubmitForm, ImportData, GoToE]
+        allow_form_features: true   # standard form JavaScript and SubmitForm only as a notice
         allow_encrypted: false
         virus_scan: auto        # auto | clamav | off
         require_virus_scan: false
@@ -183,7 +217,12 @@ contao_pdf_preview:
 vendor/bin/contao-console contao-pdf-preview:scan               # check all PDFs in files/
 vendor/bin/contao-console contao-pdf-preview:scan files/flyer   # specific folder/file
 vendor/bin/contao-console contao-pdf-preview:scan --no-cache --purge-previews
+vendor/bin/contao-console contao-pdf-preview:scan files/form.pdf --approve
+vendor/bin/contao-console contao-pdf-preview:check              # hosting check
+vendor/bin/contao-console contao-pdf-preview:check --cleanup    # clean up the preview cache
 ```
+
+For own tests with real files: `DUD_PDF_CORPUS=/path/to/pdfs vendor/bin/phpunit` checks that no PDF from this folder is blocked.
 
 ---
 
@@ -204,6 +243,14 @@ The extension is free and open source. Development, maintenance and compatibilit
 **[github.com/sponsors/drum-und-dran](https://github.com/sponsors/drum-und-dran)**
 
 Companies can also sponsor specific features. Contact: [drum-und-dran.de](https://drum-und-dran.de)
+
+---
+
+## Thanks
+
+Special thanks go to **Leo Feyer** for founding Contao (originally TYPOlight), leading the project for many years and creating the foundation this extension is built on.
+
+Many thanks to the **Contao core development team** for this wonderful CMS and the careful work on it, to everyone who enriches Contao with extensions, translations, documentation and answers in the community, and to everyone who uses Contao and keeps it alive.
 
 ---
 

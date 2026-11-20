@@ -15,8 +15,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Stellt "contao_pdf_preview.image_extensions" (Bild-Endungen + pdf) bereit und
- * reicht die Liste gezielt an die Galerie (ImagesController) und den Image
- * Studio (Lightbox) weiter.
+ * reicht die Liste gezielt an die Galerie (ImagesController) und den Image Studio
+ * (Lightbox) weiter.
  *
  * Bewusst NICHT verändert wird "contao.image.valid_extensions" selbst: Die
  * ImageFactory und die PreviewFactory von Contao würden PDFs sonst als

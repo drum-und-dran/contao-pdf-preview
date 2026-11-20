@@ -8,7 +8,8 @@ declare(strict_types=1);
  * @license MIT
  */
 
-// Inhaltselement „PDF-Seiten“: zeigt eine oder mehrere Seiten einer PDF als responsive Bilder
+// Inhaltselement „PDF-Seiten“: zeigt eine oder mehrere Seiten einer PDF als
+// responsive Bilder
 $GLOBALS['TL_DCA']['tl_content']['palettes']['pdf_pages'] = '{type_legend},type,headline;{source_legend},singleSRC,pdfPages,pdfLinkToFile;{image_legend},size,perRow,fullsize;{template_legend:hide},customTpl;{protected_legend:hide},protected;{expert_legend:hide},cssID;{invisible_legend:hide},invisible,start,stop';
 
 $GLOBALS['TL_DCA']['tl_content']['fields']['pdfPages'] = [

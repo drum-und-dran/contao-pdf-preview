@@ -13,13 +13,15 @@ namespace Dud\ContaoPdfPreview\Security;
 final class ScanResult
 {
     /**
-     * @param list<string> $reasons
+     * @param list<string> $reasons Gründe für die Sperre
+     * @param list<string> $notices Hinweise ohne Sperre (z. B. Formular-JavaScript)
      */
     public function __construct(
         public readonly bool $safe,
         public readonly array $reasons = [],
         public readonly string|null $virusScanner = null,
         public readonly int|null $pageCount = null,
+        public readonly array $notices = [],
     ) {
     }
 
@@ -30,6 +32,7 @@ final class ScanResult
             'reasons' => $this->reasons,
             'virusScanner' => $this->virusScanner,
             'pageCount' => $this->pageCount,
+            'notices' => $this->notices,
         ];
     }
 
@@ -40,6 +43,7 @@ final class ScanResult
             array_values(array_map('strval', (array) ($data['reasons'] ?? []))),
             isset($data['virusScanner']) ? (string) $data['virusScanner'] : null,
             isset($data['pageCount']) ? (int) $data['pageCount'] : null,
+            array_values(array_map('strval', (array) ($data['notices'] ?? []))),
         );
     }
 }

@@ -12,10 +12,11 @@ namespace Dud\ContaoPdfPreview\Image;
 
 use Contao\CoreBundle\Image\Preview\PreviewFactory;
 use Contao\CoreBundle\Image\Preview\UnableToGeneratePreviewException;
-use Doctrine\DBAL\Connection;
-use Dud\ContaoPdfPreview\Security\PdfSecurityScanner;
 use Contao\Image\ImportantPart;
+use Doctrine\DBAL\Connection;
 use Dud\ContaoPdfPreview\Image\Preview\CliPdfPreviewProvider;
+use Dud\ContaoPdfPreview\Security\PdfSecurityScanner;
+use Dud\ContaoPdfPreview\Security\UnsafePdfException;
 use Imagine\Image\Box;
 use Imagine\Image\ImagineInterface;
 use Imagine\Image\Point;
@@ -26,8 +27,7 @@ use Symfony\Component\Filesystem\Path;
  * Prüft eine PDF (PdfSecurityScanner), rendert die gewünschte(n) Seite(n) über
  * die PreviewFactory von Contao (gecacht unter assets/previews) und wendet
  * optional den in der Dateiverwaltung definierten wichtigen Bereich als festen
- * Zuschnitt an (falls gewünscht). Die PDF selbst
- * bleibt unverändert.
+ * Zuschnitt an (falls gewünscht). Die PDF selbst bleibt unverändert.
  */
 class PdfPreviewGenerator
 {
@@ -58,6 +58,8 @@ class PdfPreviewGenerator
         private readonly string $cacheDir,
         private readonly int $previewSize,
         private readonly int $defaultPage,
+        private readonly string|null $indexFile = null,
+        private readonly int $cropRetentionDays = 30,
     ) {
     }
 
@@ -72,7 +74,7 @@ class PdfPreviewGenerator
      *
      * @param array{0: float, 1: float, 2: float, 3: float}|false|null $crop Null = Einstellung aus tl_files, false = kein Zuschnitt
      *
-     * @throws \Dud\ContaoPdfPreview\Security\UnsafePdfException
+     * @throws UnsafePdfException
      */
     public function getPreviewPath(string $pdfPath, int|null $page = null, array|false|null $crop = null): string
     {
@@ -118,9 +120,9 @@ class PdfPreviewGenerator
     }
 
     /**
-     * Wichtiger Bereich für das gerenderte Seitenbild (Contao-Standard): Wird
-     * nicht fest zugeschnitten, übernimmt Contao ihn wie bei normalen Bildern
-     * für zuschneidende Bildgrößen.
+     * Wichtiger Bereich für das gerenderte Seitenbild (Contao-Standard): Wird nicht
+     * fest zugeschnitten, übernimmt Contao ihn wie bei normalen Bildern für
+     * zuschneidende Bildgrößen.
      */
     public function getImportantPart(string $pdfPath): ImportantPart|null
     {
@@ -271,8 +273,8 @@ class PdfPreviewGenerator
     }
 
     /**
-     * Ermittelt, welche Stufe der Renderer-Kette aktuell eine Vorschau liefern
-     * kann (für die Statusanzeige im Backend).
+     * Ermittelt, welche Stufe der Renderer-Kette aktuell eine Vorschau liefern kann
+     * (für die Statusanzeige im Backend).
      *
      * @return array{source: 'custom'|'server'|'browser'|'none', path: string|null, error: string|null}
      */
@@ -360,8 +362,8 @@ class PdfPreviewGenerator
     }
 
     /**
-     * Liefert null, wenn auf dem Server kein echter Renderer verfügbar ist
-     * (Contao liefert dann nur ein Datei-Symbol als SVG).
+     * Liefert null, wenn auf dem Server kein echter Renderer verfügbar ist (Contao
+     * liefert dann nur ein Datei-Symbol als SVG).
      */
     private function renderOnServer(string $pdfPath, int $page, bool $fallbackToFirstPage): string|null
     {
@@ -378,7 +380,141 @@ class PdfPreviewGenerator
             $preview = $factory->createPreview($pdfPath, $this->previewSize, 1, $this->getPreviewOptions())->getPath();
         }
 
-        return 'svg' === strtolower(Path::getExtension($preview)) ? null : $preview;
+        if ('svg' === strtolower(Path::getExtension($preview))) {
+            return null;
+        }
+
+        $this->remember($pdfPath, $preview);
+
+        return $preview;
+    }
+
+    /**
+     * Merkt sich neu erzeugte Server-Vorschauen mit dem Dateistand der PDF. Contao
+     * räumt assets/previews nicht selbst auf: Ohne diese Liste blieben Vorschauen
+     * ersetzter oder gelöschter PDFs dauerhaft liegen.
+     */
+    private function remember(string $pdfPath, string $preview): void
+    {
+        static $seen = [];
+
+        if (null === $this->indexFile || isset($seen[$preview])) {
+            return;
+        }
+
+        $seen[$preview] = true;
+        $mtime = @filemtime($preview);
+
+        // Nur frisch erzeugte Dateien eintragen; ältere stehen bereits in der Liste
+        if (false === $mtime || $mtime < time() - 600) {
+            return;
+        }
+
+        $line = implode("\t", [
+            Path::makeRelative($pdfPath, $this->projectDir),
+            self::fileVersion($pdfPath),
+            Path::makeRelative($preview, $this->projectDir),
+        ])."\n";
+
+        try {
+            (new Filesystem())->mkdir(\dirname($this->indexFile));
+            @file_put_contents($this->indexFile, $line, FILE_APPEND | LOCK_EX);
+        } catch (\Throwable) {
+        }
+    }
+
+    public static function fileVersion(string $path): string
+    {
+        clearstatcache(true, $path);
+
+        return @filemtime($path).'-'.@filesize($path);
+    }
+
+    /**
+     * Räumt die Vorschau-Caches auf:
+     *  - Server-Vorschauen gelöschter oder ersetzter PDFs (laut Liste)
+     *  - Zuschnitte, die seit $cropRetentionDays Tagen nicht genutzt wurden
+     *    (werden bei Bedarf automatisch neu erzeugt)
+     *  - liegen gebliebene temporäre Dateien
+     *
+     * @return array{files: int, bytes: int}
+     */
+    public function cleanup(): array
+    {
+        $stats = ['files' => 0, 'bytes' => 0];
+        $filesystem = new Filesystem();
+
+        $delete = static function (string $file) use (&$stats, $filesystem): void {
+            if (is_file($file)) {
+                ++$stats['files'];
+                $stats['bytes'] += (int) @filesize($file);
+                $filesystem->remove($file);
+            }
+        };
+
+        if (null !== $this->indexFile && is_file($this->indexFile)) {
+            $handle = @fopen($this->indexFile, 'c+');
+
+            if ($handle && flock($handle, LOCK_EX)) {
+                $keep = [];
+
+                while (false !== ($line = fgets($handle))) {
+                    $parts = explode("\t", rtrim($line, "\n"));
+
+                    if (3 !== \count($parts)) {
+                        continue;
+                    }
+
+                    [$pdf, $version, $preview] = $parts;
+                    $previewAbsolute = Path::join($this->projectDir, $preview);
+                    $pdfAbsolute = Path::join($this->projectDir, $pdf);
+
+                    // Nur Dateien im Vorschau-Verzeichnis anfassen
+                    if (str_contains($preview, '..') || !Path::isBasePath(\dirname($this->cacheDir), $previewAbsolute) || !\in_array(strtolower(Path::getExtension($previewAbsolute)), ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'], true)) {
+                        continue;
+                    }
+
+                    if (!is_file($pdfAbsolute) || self::fileVersion($pdfAbsolute) !== $version) {
+                        $delete($previewAbsolute);
+
+                        continue;
+                    }
+
+                    if (is_file($previewAbsolute)) {
+                        $keep[$preview] = $line;
+                    }
+                }
+
+                ftruncate($handle, 0);
+                rewind($handle);
+                fwrite($handle, implode('', $keep));
+                fflush($handle);
+                flock($handle, LOCK_UN);
+            }
+
+            if ($handle) {
+                fclose($handle);
+            }
+        }
+
+        if (is_dir($this->cacheDir)) {
+            $limit = time() - $this->cropRetentionDays * 86400;
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->cacheDir, \FilesystemIterator::SKIP_DOTS));
+
+            foreach ($iterator as $file) {
+                if (!$file->isFile()) {
+                    continue;
+                }
+
+                $isTmp = str_ends_with($file->getFilename(), '.tmp');
+
+                if ($file->getMTime() < ($isTmp ? time() - 3600 : $limit)) {
+                    $delete($file->getPathname());
+                }
+            }
+        }
+
+        return $stats;
     }
 
     /**
@@ -390,6 +526,12 @@ class PdfPreviewGenerator
         $target = Path::join($this->cacheDir, $hash[0], pathinfo($previewPath, PATHINFO_FILENAME).'-crop-'.substr($hash, 1).'.png');
 
         if (is_file($target)) {
+            // Nutzung vermerken (höchstens einmal täglich), damit die Bereinigung nur
+            // tatsächlich ungenutzte Zuschnitte entfernt
+            if ((int) @filemtime($target) < time() - 86400) {
+                @touch($target);
+            }
+
             return $target;
         }
 
@@ -415,8 +557,8 @@ class PdfPreviewGenerator
     /**
      * Der Renderer-Fingerabdruck fließt in den Cache-Schlüssel der PreviewFactory
      * ein. Wird auf dem Server nachträglich ein Renderer installiert (z. B.
-     * poppler-utils oder Imagick), werden zuvor gespeicherte Platzhalter nicht
-     * mehr verwendet und die Seiten automatisch auf dem Server neu gerendert.
+     * poppler-utils oder Imagick), werden zuvor gespeicherte Platzhalter nicht mehr
+     * verwendet und die Seiten automatisch auf dem Server neu gerendert.
      *
      * @return array<string, string>
      */

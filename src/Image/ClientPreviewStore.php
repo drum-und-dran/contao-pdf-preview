@@ -12,6 +12,7 @@ namespace Dud\ContaoPdfPreview\Image;
 
 use Imagine\Image\Box;
 use Imagine\Image\ImagineInterface;
+use Imagine\Image\Point;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
 
@@ -21,8 +22,9 @@ use Symfony\Component\Filesystem\Path;
  * Poppler und ohne exec/proc_open.
  *
  * Hochgeladene Daten werden nie direkt abgelegt: Sie werden auf Typ, Größe und
- * Abmessungen geprüft und über Imagine (GD/Imagick) vollständig neu als PNG
- * codiert, wodurch evtl. angehängte Fremddaten verworfen werden.
+ * Abmessungen geprüft und über Imagine (GD/Imagick) vollständig neu als JPEG
+ * codiert, wodurch evtl. angehängte Fremddaten verworfen werden. JPEG statt PNG
+ * spart bei gerenderten Seiten etwa 80 % Speicherplatz.
  */
 class ClientPreviewStore
 {
@@ -41,7 +43,18 @@ class ClientPreviewStore
     {
         $path = $this->getTargetPath($pdfPath, $page);
 
-        return null !== $path && is_file($path) ? $path : null;
+        if (null === $path) {
+            return null;
+        }
+
+        if (is_file($path)) {
+            return $path;
+        }
+
+        // Ältere Versionen haben PNG gespeichert
+        $legacy = substr($path, 0, -4).'.png';
+
+        return is_file($legacy) ? $legacy : null;
     }
 
     /**
@@ -57,12 +70,13 @@ class ClientPreviewStore
 
         $pages = [];
 
-        foreach (glob($dir.'/page-*.png') ?: [] as $file) {
-            if (preg_match('/page-(\d+)\.png$/', $file, $m)) {
+        foreach (glob($dir.'/page-*.{jpg,png}', GLOB_BRACE) ?: glob($dir.'/page-*') ?: [] as $file) {
+            if (preg_match('/page-(\d+)\.(?:jpg|png)$/', $file, $m)) {
                 $pages[] = (int) $m[1];
             }
         }
 
+        $pages = array_values(array_unique($pages));
         sort($pages);
 
         return $pages;
@@ -107,12 +121,15 @@ class ClientPreviewStore
         // Vollständig neu codieren (entfernt Metadaten und angehängte Daten)
         $image = $this->imagine->load($binary);
         $size = $image->getSize();
-        $clean = $this->imagine->create(new Box($size->getWidth(), $size->getHeight()));
-        $clean->paste($image, new \Imagine\Image\Point(0, 0));
+
+        $clean = $this->imagine->create(new Box($size->getWidth(), $size->getHeight()), $image->palette()->color('#ffffff', 100));
+        $clean->paste($image, new Point(0, 0));
 
         $tmp = $target.'.'.bin2hex(random_bytes(4)).'.tmp';
-        $clean->save($tmp, ['format' => 'png']);
+        $clean->save($tmp, ['format' => 'jpeg', 'jpeg_quality' => 88]);
+
         $filesystem->rename($tmp, $target, true);
+        $filesystem->remove(substr($target, 0, -4).'.png');
 
         // Alte Stände (frühere Datei-Versionen) aufräumen
         $this->cleanupStaleVersions($pdfPath);
@@ -133,7 +150,7 @@ class ClientPreviewStore
     {
         $dir = $this->getDirectory($pdfPath);
 
-        return null === $dir ? null : Path::join($dir, 'page-'.$page.'.png');
+        return null === $dir ? null : Path::join($dir, 'page-'.$page.'.jpg');
     }
 
     /**
@@ -170,5 +187,73 @@ class ClientPreviewStore
                 (new Filesystem())->remove($dir);
             }
         }
+    }
+
+    /**
+     * Entfernt Renderings gelöschter oder ersetzter PDFs und liegen gebliebene
+     * temporäre Dateien.
+     *
+     * @param array<string, true> $existingPdfs relative Pfade aller vorhandenen PDFs
+     *
+     * @return array{files: int, bytes: int}
+     */
+    public function cleanup(array $existingPdfs): array
+    {
+        $stats = ['files' => 0, 'bytes' => 0];
+
+        if (!is_dir($this->storageDir)) {
+            return $stats;
+        }
+
+        $known = [];
+
+        foreach (array_keys($existingPdfs) as $relative) {
+            $known[substr(hash('sha256', (string) $relative), 0, 16)] = (string) $relative;
+        }
+
+        foreach (glob($this->storageDir.'/*', GLOB_ONLYDIR) ?: [] as $pathDir) {
+            $relative = $known[basename($pathDir)] ?? null;
+
+            if (null === $relative) {
+                $this->removeCounting($pathDir, $stats);
+
+                continue;
+            }
+
+            $current = $this->getDirectory($relative);
+
+            foreach (glob($pathDir.'/*', GLOB_ONLYDIR) ?: [] as $versionDir) {
+                if ($versionDir !== $current) {
+                    $this->removeCounting($versionDir, $stats);
+
+                    continue;
+                }
+
+                foreach (glob($versionDir.'/*.tmp') ?: [] as $tmp) {
+                    if (filemtime($tmp) < time() - 3600) {
+                        $this->removeCounting($tmp, $stats);
+                    }
+                }
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * @param array{files: int, bytes: int} $stats
+     */
+    private function removeCounting(string $path, array &$stats): void
+    {
+        $files = is_dir($path) ? iterator_to_array(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS)), false) : [new \SplFileInfo($path)];
+
+        foreach ($files as $file) {
+            if ($file->isFile()) {
+                ++$stats['files'];
+                $stats['bytes'] += (int) $file->getSize();
+            }
+        }
+
+        (new Filesystem())->remove($path);
     }
 }

@@ -24,11 +24,11 @@ use Symfony\Component\Filesystem\Path;
  * Erlaubt PDF-Dateien in allen Bild-Auswahlfeldern des Backends.
  *
  * Erkannt werden alle "fileTree"-Felder, deren erlaubte Endungen den
- * Bild-Endungen von Contao entsprechen (%contao.image.valid_extensions%) –
- * egal ob Core (News, Events, FAQ, Inhaltselemente, Module, Seiten …) oder
+ * Bild-Endungen von Contao entsprechen (%contao.image.valid_extensions%) – egal
+ * ob Core (News, Events, FAQ, Inhaltselemente, Module, Seiten …) oder
  * Erweiterungen von Drittanbietern. Felder, die Contao erst zur Laufzeit per
- * load_callback umstellt (z. B. tl_content.singleSRC je nach Elementtyp),
- * werden über einen zusätzlichen load_callback ebenfalls erfasst.
+ * load_callback umstellt (z. B. tl_content.singleSRC je nach Elementtyp), werden
+ * über einen zusätzlichen load_callback ebenfalls erfasst.
  */
 class ImageFieldListener
 {
@@ -70,7 +70,6 @@ class ImageFieldListener
             // Nach den vorhandenen load_callbacks ausführen
             $field['load_callback'] ??= [];
             $field['load_callback'][] = [self::class, 'onLoadField'];
-
             $field['save_callback'] ??= [];
             $field['save_callback'][] = [self::class, 'onSaveField'];
         }

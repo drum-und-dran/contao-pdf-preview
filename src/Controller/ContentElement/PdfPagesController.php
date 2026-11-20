@@ -62,7 +62,8 @@ class PdfPagesController extends AbstractContentElementController
             return new Response();
         }
 
-        // Metadaten (Alt-Text, Bildunterschrift …) der PDF aus der Dateiverwaltung übernehmen
+        // Metadaten (Alt-Text, Bildunterschrift …) der PDF aus der
+        // Dateiverwaltung übernehmen
         $metadata = null;
 
         try {
@@ -79,6 +80,7 @@ class PdfPagesController extends AbstractContentElementController
         ;
 
         $images = [];
+
         $importantPart = $this->generator->getImportantPart($pdfPath);
         $customImage = $this->generator->getSettings($pdfPath)['image'];
 

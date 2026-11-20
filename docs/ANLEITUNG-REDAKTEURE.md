@@ -130,7 +130,17 @@ Wurde die PDF bei der Prüfung blockiert, kann sie nicht ausgewählt werden.
 
 **Beim Speichern kommt die Meldung „wurde von der Sicherheitsprüfung blockiert“.**
 Die PDF enthält etwas Gefährliches oder Ungewöhnliches.
+Die Meldung nennt den genauen Grund.
 Eine andere PDF verwenden oder beim Webmaster nachfragen.
+Nach einer Prüfung kann der Webmaster unbedenkliche Dateien freigeben.
+
+**In der Dateiverwaltung steht ein Hinweis zu Formular-JavaScript.**
+Das ist kein Fehler. Ausfüllbare Formulare enthalten kleine Skripte, z. B. für Datumsfelder.
+Die PDF kann ganz normal verwendet werden.
+
+**In der Dateiverwaltung steht „Das Hosting schränkt die PDF-Vorschau ein“.**
+Ein Klick auf den Hinweis zeigt, welche Grenze des Webhostings betroffen ist.
+Die PDF-Vorschau funktioniert trotzdem. Den Hinweis an den Webmaster weitergeben.
 
 **In der Dateiverwaltung steht „wird jetzt im Browser erzeugt“.**
 Das ist normal. Ein paar Sekunden warten, bis das Bild erscheint.

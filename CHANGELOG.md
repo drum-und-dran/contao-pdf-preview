@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.0
+
+**Deutsch**
+
+- Behoben: Objekt-Streams, deren komprimierte Daten mit dem Byte 0x0D oder 0x0A enden, galten fälschlich als „nicht entpackbar (Kompressionsbombe?)“. Die Daten werden jetzt über `/Length` gelesen, schrittweise und fehlertolerant entpackt.
+- Kompressionsbomben werden am Verhältnis von gepackter zu entpackter Größe erkannt (ab 1:200), nicht mehr an einer festen Größe. Der Speicher pro Stream richtet sich nach dem freien `memory_limit`, jeder Stream wird einzeln geprüft und sofort wieder freigegeben (`max_decompressed_size: 0` = automatisch).
+- Ausfüllbare Formulare: JavaScript, das ausschließlich die eingebauten Acrobat-Formularfunktionen (`AFDate_FormatEx`, `AFNumber_Format`, `AFSimple_Calculate` …) mit festen Werten aufruft, führt nicht mehr zur Sperre, sondern zu einem Hinweis. Anderer Code wird weiterhin blockiert und mit einem Auszug gemeldet. `SubmitForm` ist ebenfalls nur noch ein Hinweis. Abschaltbar mit `allow_form_features: false`.
+- Eindeutige Meldungen: Jeder Befund nennt die konkrete Ursache (Objekt, Abbruchstelle, zlib-Fehler, lesbare Objekte, Code-Auszug, tatsächliches Dateiformat, Dateigröße und Limit). `/JavaScript` und `/JS` werden nur noch einmal gemeldet.
+- Manuelle Freigabe geprüfter Dateien: `contao-pdf-preview:scan <Datei> --approve`, `--revoke`, `--approvals`. Gilt nur für genau diesen Inhalt (SHA-256), der Virenscan läuft weiter. Virenfunde, Nicht-PDFs und Polyglot-Dateien sind nie freigebbar.
+- Hosting-Prüfung: Renderer, `proc_open`, Virenscanner, Arbeitsspeicher, Laufzeit, Upload-Limit, Speicherplatz, zlib und Bildbearbeitung werden erkannt. Einschränkungen erscheinen mit Empfehlung auf der Backend-Startseite und in der Dateiverwaltung, Details mit `contao-pdf-preview:check`.
+- Ressourcen: Die Prüfung aller PDFs verteilt sich bei kurzer Laufzeit auf mehrere Cron-Läufe. Deaktivierte Funktionen und fehlende Erweiterungen werden erkannt und umgangen.
+- Speicherplatz: Täglicher Cronjob entfernt Vorschauen gelöschter oder ersetzter PDFs, ungenutzte Zuschnitte (30 Tage) und temporäre Reste. Manuell mit `contao-pdf-preview:check --cleanup`. Im Browser gerenderte Seiten werden als JPEG statt PNG gespeichert (etwa 80 % kleiner).
+- Die Liste blockierter PDFs auf der Backend-Startseite wird nach einem Update oder einer Konfigurationsänderung sofort neu geprüft und beim Upload direkt aktualisiert. Hinweise (z. B. Formular-JavaScript) erscheinen beim Upload und in der Dateiverwaltung.
+- Sicherheit: Nicht vollständig prüfbare Inhalte (PCRE-Limit) werden blockiert, Ausgaben auf der Konsole maskiert, die Bereinigung löscht ausschließlich im Vorschau-Verzeichnis.
+- README: Dank an Leo Feyer, das Contao-Core-Team und die Contao-Community.
+
+**English**
+
+- Fixed: object streams whose compressed data end with the byte 0x0D or 0x0A were wrongly reported as "cannot be decompressed (compression bomb?)". The data are now read via `/Length` and decompressed step by step and fault-tolerantly.
+- Compression bombs are detected by the ratio of compressed to decompressed size (from 1:200) instead of a fixed size. The memory per stream depends on the free `memory_limit`, each stream is checked separately and released right away (`max_decompressed_size: 0` = automatic).
+- Fillable forms: JavaScript that only calls the built-in Acrobat form functions (`AFDate_FormatEx`, `AFNumber_Format`, `AFSimple_Calculate` …) with fixed values no longer blocks the PDF but results in a notice. Other code is still blocked and reported with an excerpt. `SubmitForm` is a notice as well. Can be disabled with `allow_form_features: false`.
+- Clear messages: every finding names the specific cause (object, position of the error, zlib error, readable objects, code excerpt, actual file format, file size and limit). `/JavaScript` and `/JS` are only reported once.
+- Manual approval of reviewed files: `contao-pdf-preview:scan <file> --approve`, `--revoke`, `--approvals`. Applies to exactly this content (SHA-256), the virus scan keeps running. Virus findings, non-PDFs and polyglot files can never be approved.
+- Hosting check: renderer, `proc_open`, virus scanner, memory, execution time, upload limit, disk space, zlib and image processing are detected. Limitations are shown with a recommendation on the back end start page and in the file manager, details via `contao-pdf-preview:check`.
+- Resources: with a short execution time, checking all PDFs is spread over several cron runs. Disabled functions and missing extensions are detected and worked around.
+- Disk space: a daily cron job removes previews of deleted or replaced PDFs, unused crops (30 days) and temporary leftovers. Manually via `contao-pdf-preview:check --cleanup`. Pages rendered in the browser are stored as JPEG instead of PNG (about 80 % smaller).
+- The list of blocked PDFs on the back end start page is rechecked right after an update or a configuration change and updated directly on upload. Notices (e.g. form JavaScript) are shown on upload and in the file manager.
+- Security: content that cannot be inspected completely (PCRE limit) is blocked, console output is escaped, the cleanup only deletes inside the preview directory.
+- README: thanks to Leo Feyer, the Contao core team and the Contao community.
+
 ## 1.0.4
 
 **Deutsch**

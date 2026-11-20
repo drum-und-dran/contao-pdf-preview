@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+/*
+ * Contao PDF Preview – (c) Gunnar Haeuschkel / Drum und Dran, https://drum-und-dran.de
+ *
+ * @license MIT
+ */
+
 namespace Dud\ContaoPdfPreview\Tests;
 
 /**
@@ -43,12 +49,15 @@ final class PdfFactory
 
     public static function withObject(string $object, string $trailerExtra = ''): string
     {
-        return self::build([
-            '<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>',
-            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>',
-            $object,
-        ], $trailerExtra);
+        return self::build(
+            [
+                '<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>',
+                '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+                '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>',
+                $object,
+            ],
+            $trailerExtra,
+        );
     }
 
     public static function objectStream(string $content, string $filter = '/FlateDecode'): string
@@ -56,5 +65,33 @@ final class PdfFactory
         $data = '/FlateDecode' === $filter ? (string) gzcompress($content) : $content;
 
         return self::withObject('<< /Type /ObjStm /N 1 /First 4 /Filter '.$filter.' /Length '.\strlen($data)." >>\nstream\n".$data."\nendstream");
+    }
+
+    /**
+     * Objekt-Stream mit beliebigen (z. B. absichtlich beschädigten) Rohdaten.
+     */
+    public static function objectStreamRaw(string $data, int $count = 1, int $first = 4, bool $withLength = true, string $eol = "\n"): string
+    {
+        $length = $withLength ? ' /Length '.\strlen($data) : '';
+
+        return self::withObject('<< /Type /ObjStm /N '.$count.' /First '.$first.' /Filter /FlateDecode'.$length." >>\nstream\n".$data.$eol.'endstream');
+    }
+
+    /**
+     * Liefert Inhalt, dessen zlib-Daten mit dem Byte $lastByte enden – genau der
+     * Fall, an dem die Prüfung bis 1.0.4 scheiterte (Datenbyte 0x0D am Ende).
+     */
+    public static function contentEndingCompressedWith(string $lastByte, string $base = '4 0 << /Type /Font >>'): array
+    {
+        for ($i = 0; $i < 100000; ++$i) {
+            $content = $base.' % '.$i;
+            $compressed = (string) gzcompress($content);
+
+            if (str_ends_with($compressed, $lastByte)) {
+                return [$content, $compressed];
+            }
+        }
+
+        throw new \RuntimeException('No matching content found.');
     }
 }

@@ -34,9 +34,9 @@ class CliPdfPreviewProvider implements PreviewProviderInterface
      */
     public const EXTRA_DIRS = ['/usr/bin', '/usr/local/bin', '/bin', '/opt/local/bin', '/opt/homebrew/bin'];
 
-    private string|false|null $binary = null;
+    private false|string|null $binary = null;
 
-    public function __construct(private readonly string|bool|null $configuredBinary = null)
+    public function __construct(private readonly bool|string|null $configuredBinary = null)
     {
     }
 
@@ -145,7 +145,7 @@ class CliPdfPreviewProvider implements PreviewProviderInterface
         return (string) $this->getBinary();
     }
 
-    private function getBinary(): string|false
+    private function getBinary(): false|string
     {
         if (null !== $this->binary) {
             return $this->binary;

@@ -59,6 +59,25 @@ Kann der Server nicht rendern, erzeugt das Backend beim Öffnen der PDF in der D
 
 Gerenderte Seiten werden in `assets/previews` zwischengespeichert. Wird die PDF ersetzt, werden die Vorschauen automatisch neu erzeugt.
 
+### Hosting-Prüfung
+
+Die Erweiterung erkennt die Möglichkeiten und Grenzen des Hostings und passt sich daran an: Arbeitsspeicher (`memory_limit`), maximale Laufzeit, Upload-Limit, freier Speicherplatz, deaktivierte Funktionen (`proc_open`), vorhandene Renderer, Virenscanner und PHP-Erweiterungen. Schränkt das Hosting die PDF-Vorschau ein, zeigen die Backend-Startseite (für Administratoren) und die Dateiverwaltung konkret, welche Grenze betroffen ist, was das bedeutet und welche Hosting-Ausstattung empfehlenswert ist.
+
+```bash
+vendor/bin/contao-console contao-pdf-preview:check
+```
+
+Bei knappen Ressourcen arbeitet die Erweiterung schrittweise statt abzubrechen: Die Prüfung aller PDFs wird bei kurzer Laufzeit auf mehrere Cron-Läufe verteilt, der Speicher für das Entpacken richtet sich nach dem freien Arbeitsspeicher.
+
+### Speicherplatz
+
+Vorschaubilder sollen den Webspace nicht füllen. Ein **täglicher Cronjob** entfernt deshalb:
+- Vorschauen gelöschter oder ersetzter PDFs (auch per FTP ausgetauschter Dateien)
+- Zuschnitte, die seit 30 Tagen nicht mehr genutzt wurden (sie entstehen bei Bedarf neu)
+- liegen gebliebene temporäre Dateien
+
+Im Browser gerenderte Seiten werden als JPEG gespeichert (etwa 80 % kleiner als PNG). Manuell: `contao-pdf-preview:check --cleanup`. Vorschauen, die vor Version 1.1.0 erzeugt wurden, lassen sich einmalig mit `contao-pdf-preview:scan --purge-previews` entfernen.
+
 ---
 
 ## Sicherheit
@@ -68,10 +87,24 @@ PDFs sind ein beliebter Angriffsvektor. Die Erweiterung prüft deshalb **jede PD
 **Mehrstufige Prüfung (Grundsatz: im Zweifel blockieren):**
 
 1. **Größenlimit** (Standard: 50 MB)
-2. **Strenge Strukturprüfung**: PDF-Header am Dateianfang, Dateiende-Marker vorhanden. Polyglot-Dateien und manipulierte Dateien werden abgewiesen.
+2. **Strenge Strukturprüfung**: PDF-Header am Dateianfang, Dateiende-Marker vorhanden. Polyglot-Dateien und manipulierte Dateien werden abgewiesen. Fälschlich als `.pdf` gespeicherte Dateien werden mit ihrem tatsächlichen Format benannt (z. B. PNG, HTML).
 3. **Verschlüsselte PDFs** werden blockiert, weil ihr Inhalt nicht prüfbar ist.
-4. **Aktive Inhalte** werden erkannt und blockiert: JavaScript, Launch-Aktionen, eingebettete Dateien, XFA-Formulare, RichMedia/Flash, SubmitForm, ImportData, GoToE. Das gilt auch für **maskierte Namen** (`/J#61vaScript`) und für Inhalte in **komprimierten Objekt-Streams**. Nicht prüfbare Streams und **Kompressionsbomben** führen ebenfalls zur Sperre.
+4. **Aktive Inhalte** werden erkannt und blockiert: JavaScript, Launch-Aktionen, eingebettete Dateien, XFA-Formulare, RichMedia/Flash, ImportData, GoToE. Das gilt auch für **maskierte Namen** (`/J#61vaScript`) und für Inhalte in **komprimierten Objekt-Streams**. Nicht prüfbare Streams und **Kompressionsbomben** führen ebenfalls zur Sperre. Eine Kompressionsbombe wird am Verhältnis von gepackter zu entpackter Größe erkannt (ab 1:200, übliche PDFs erreichen etwa 1:30), nicht an einer festen Größe.
 5. **Virenscan mit ClamAV**, wahlweise über den clamd-Socket, `clamdscan` oder `clamscan`. Optional als Pflicht konfigurierbar.
+
+**Ausfüllbare Formulare:** Formular-Editoren (Acrobat, LibreOffice u. a.) hinterlegen für Datums-, Zahlen- und Berechnungsfelder JavaScript, das ausschließlich die eingebauten Acrobat-Formularfunktionen aufruft (z. B. `AFDate_FormatEx("dd.mm.yyyy")`). Dieser Code wird vollständig gelesen, auch aus komprimierten und ausgelagerten Objekten, und gegen eine feste Liste dieser Funktionen geprüft. Werden nur feste Werte übergeben, ist die PDF unbedenklich und erhält lediglich einen Hinweis. Jeder andere Code wird mit einem Auszug blockiert. Absende-Schaltflächen (`SubmitForm`) gelten ebenfalls als Hinweis. Mit `allow_form_features: false` wird jedes JavaScript blockiert.
+
+**Eindeutige Meldungen:** Jeder Befund nennt die konkrete Ursache, z. B. das betroffene Objekt, die Stelle, an der das Entpacken abbricht, den zlib-Fehler und wie viele Objekte lesbar sind, oder den Auszug des beanstandeten JavaScript-Codes.
+
+**Manuelle Freigabe:** Ein Administrator kann eine geprüfte Datei trotz Befund freigeben:
+
+```bash
+vendor/bin/contao-console contao-pdf-preview:scan files/formular.pdf --approve
+vendor/bin/contao-console contao-pdf-preview:scan --approvals                  # alle Freigaben
+vendor/bin/contao-console contao-pdf-preview:scan files/formular.pdf --revoke
+```
+
+Die Freigabe gilt nur für genau diesen Dateiinhalt (SHA-256) und erlischt, sobald die Datei verändert wird. Der Virenscan läuft weiterhin. Virenfunde, Dateien, die keine PDF sind, und Polyglot-Dateien lassen sich nie freigeben.
 
 **Weitere Schutzmaßnahmen:**
 - Ghostscript läuft immer mit `-dSAFER`, alle externen Prozesse mit Zeitlimit und ohne Shell (keine Kommando-Injection).
@@ -169,8 +202,9 @@ contao_pdf_preview:
     security:
         enabled: true
         max_file_size: 52428800
-        max_decompressed_size: 104857600
+        max_decompressed_size: 0    # 0 = automatisch nach freiem Arbeitsspeicher
         blocked_features: [JavaScript, JS, Launch, EmbeddedFile, EmbeddedFiles, RichMedia, XFA, SubmitForm, ImportData, GoToE]
+        allow_form_features: true   # Standard-Formular-JavaScript und SubmitForm nur als Hinweis
         allow_encrypted: false
         virus_scan: auto        # auto | clamav | off
         require_virus_scan: false
@@ -183,7 +217,12 @@ contao_pdf_preview:
 vendor/bin/contao-console contao-pdf-preview:scan               # alle PDFs in files/ prüfen
 vendor/bin/contao-console contao-pdf-preview:scan files/flyer   # bestimmter Ordner/Datei
 vendor/bin/contao-console contao-pdf-preview:scan --no-cache --purge-previews
+vendor/bin/contao-console contao-pdf-preview:scan files/formular.pdf --approve
+vendor/bin/contao-console contao-pdf-preview:check              # Hosting-Prüfung
+vendor/bin/contao-console contao-pdf-preview:check --cleanup    # Vorschau-Cache bereinigen
 ```
+
+Für eigene Tests mit echten Dateien: `DUD_PDF_CORPUS=/pfad/zu/pdfs vendor/bin/phpunit` prüft, dass keine PDF aus diesem Ordner blockiert wird.
 
 ---
 
@@ -202,6 +241,14 @@ Die Erweiterung ist kostenlos und quelloffen. Weiterentwicklung, Pflege und die 
 **[github.com/sponsors/drum-und-dran](https://github.com/sponsors/drum-und-dran)**
 
 Auch Firmen können gezielt Funktionen sponsern. Kontakt: [drum-und-dran.de](https://drum-und-dran.de)
+
+---
+
+## Dank
+
+Besonderer Dank gilt **Leo Feyer** für die Gründung von Contao (ursprünglich TYPOlight), die jahrelange Leitung des Projekts und die Grundlage, auf der diese Erweiterung aufbaut.
+
+Herzlichen Dank an das **Contao-Core-Entwicklerteam** für dieses wunderbare CMS und die sorgfältige Arbeit daran, an alle, die Contao mit Erweiterungen, Übersetzungen, Dokumentation und Antworten in der Community bereichern, und an alle, die Contao nutzen und damit lebendig halten.
 
 ---
 

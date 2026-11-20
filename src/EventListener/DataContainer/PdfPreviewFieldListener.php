@@ -17,6 +17,7 @@ use Contao\CoreBundle\Security\ContaoCorePermissions;
 use Contao\DataContainer;
 use Contao\Image\ResizeConfiguration;
 use Contao\StringUtil;
+use Dud\ContaoPdfPreview\Hosting\HostingCheck;
 use Dud\ContaoPdfPreview\Image\ClientPreviewStore;
 use Dud\ContaoPdfPreview\Image\PdfPreviewGenerator;
 use Dud\ContaoPdfPreview\Security\PdfSecurityScanner;
@@ -33,8 +34,8 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
  * Der Bildausschnitt wird genau wie bei Bildern im Contao-Standard bearbeitet:
  * mit Contaos eigenem Editor (Backend.editPreviewWizard) und gespeichert in
  * tl_files.importantPartX/Y/Width/Height. Zusätzlich zeigt das Feld den Status
- * von Sicherheitsprüfung und Renderer und rendert die PDF bei Bedarf im
- * Browser (pdf.js), falls der Server das nicht kann.
+ * von Sicherheitsprüfung und Renderer und rendert die PDF bei Bedarf im Browser
+ * (pdf.js), falls der Server das nicht kann.
  */
 class PdfPreviewFieldListener
 {
@@ -49,6 +50,7 @@ class PdfPreviewFieldListener
         private readonly Security $security,
         private readonly string $projectDir,
         private readonly int $previewSize,
+        private readonly HostingCheck|null $hostingCheck = null,
     ) {
     }
 
@@ -76,6 +78,7 @@ class PdfPreviewFieldListener
 
         $pages = $this->generator->getPages($absolute);
         $diagnosis = $this->generator->diagnose($absolute, $pages[0]);
+
         $basePath = $this->requestStack->getCurrentRequest()?->getBasePath() ?? '';
 
         // Wie im Contao-Standard: Vorschau in einer 699 × 524 px großen Box
@@ -85,6 +88,7 @@ class PdfPreviewFieldListener
             try {
                 $image = $this->imageFactory->create($diagnosis['path'], [699, 524, ResizeConfiguration::MODE_BOX]);
                 $size = $image->getDimensions()->getSize();
+
                 $imageHtml = \sprintf('<img src="%s" width="%d" height="%d" alt="">', StringUtil::specialchars($basePath.'/'.ltrim($image->getUrl($this->projectDir), '/')), $size->getWidth(), $size->getHeight());
             } catch (\Throwable) {
             }
@@ -136,6 +140,7 @@ class PdfPreviewFieldListener
         $GLOBALS['TL_CSS']['dud_pdf_preview'] = 'bundles/contaopdfpreview/pdf-preview.css';
 
         $ctrl = 'ctrl_preview_pdf_'.substr(md5($relative), 0, 8);
+
         $html = '<div class="widget clr dud-pdfpreview" data-dud-pdfpreview'.$attributes.'>'.$label;
         $html .= '<p class="dud-pdfpreview__status">'
             .'<span>'.StringUtil::specialchars($pageInfo).'</span>'
@@ -143,13 +148,36 @@ class PdfPreviewFieldListener
             .$virus
             .'</p>';
 
+        if ($hosting = $this->hostingCheck?->getProblems()) {
+            $html .= '<details class="dud-pdfpreview__hosting"><summary>'.StringUtil::specialchars(HostingCheck::text('summary')).'</summary><ul>'
+                .implode(
+                    '',
+                    array_map(
+                        static function (array $problem): string {
+                            $text = HostingCheck::describe($problem);
+
+                            return '<li><strong>'.StringUtil::specialchars($text['label'].': '.$text['value']).'</strong> – '.StringUtil::specialchars($text['recommendation']).'</li>';
+                        },
+                        $hosting,
+                    ),
+                )
+                .'</ul></details>';
+        }
+
+        if ($scan->notices) {
+            $html .= '<div class="tl_info dud-pdfpreview__notices">'.$t('notices', 'Notes from the security check (not blocking):').'<ul>'
+                .implode('', array_map(static fn ($r) => '<li>'.StringUtil::specialchars(ScanReason::format($r)).'</li>', $scan->notices))
+                .'</ul></div>';
+        }
+
         if ('custom' === $diagnosis['source']) {
             $html .= '<p class="tl_info">'.$t('customHint', 'The custom preview image is used. Its important part is defined on the image itself.').'</p>';
         }
 
         $html .= '<div id="'.$ctrl.'" class="tl_edit_preview">'.$imageHtml.'</div>';
 
-        // Contaos eigener Editor für den wichtigen Bereich – nur mit Schreibrechten auf die Felder
+        // Contaos eigener Editor für den wichtigen Bereich – nur mit Schreibrechten
+        // auf die Felder
         if ($this->canEditImportantPart()) {
             $html .= '<script>Backend.editPreviewWizard($(\''.$ctrl.'\'));</script>';
             $html .= '<p class="tl_help tl_tip">'.$t('previewHelp', 'The important part is marked by dragging a frame with the mouse button held down – just like with images. With "Show PDF in the important part only" only this area is shown.').'</p>';
@@ -159,6 +187,7 @@ class PdfPreviewFieldListener
         if (\in_array($diagnosis['source'], ['browser', 'none'], true)) {
             $html .= '<p class="dud-pdfpreview__tools"><button type="button" class="tl_submit" data-dud-pdfpreview-render title="'.$t('renderBrowserHint', 'Regenerates the preview image in the browser, e.g. if it is faulty or incomplete.').'">'.$t('renderBrowser', 'Regenerate preview image').'</button> <span class="tl_help">'.$t('renderBrowserHint', 'Regenerates the preview image in the browser, e.g. if it is faulty or incomplete.').'</span></p>';
         }
+
         $html .= '<p class="dud-pdfpreview__message" data-dud-pdfpreview-message aria-live="polite"></p>';
 
         return $html.'</div>';

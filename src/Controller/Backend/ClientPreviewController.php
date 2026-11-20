@@ -14,6 +14,7 @@ use Contao\CoreBundle\Security\ContaoCorePermissions;
 use Dud\ContaoPdfPreview\Image\ClientPreviewStore;
 use Dud\ContaoPdfPreview\Image\PdfPreviewGenerator;
 use Dud\ContaoPdfPreview\Security\PdfSecurityScanner;
+use Dud\ContaoPdfPreview\Security\ScanReason;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Filesystem\Path;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -26,11 +27,10 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
-use Dud\ContaoPdfPreview\Security\ScanReason;
 
 /**
- * Nimmt im Browser (pdf.js) gerenderte Seitenbilder entgegen – für Webhostings,
- * auf denen der Server selbst keine PDFs rendern kann.
+ * Nimmt im Browser (pdf.js) gerenderte Seitenbilder entgegen – für
+ * Webhostings, auf denen der Server selbst keine PDFs rendern kann.
  *
  * Absicherung: Backend-Login, Zugriff auf die Dateiverwaltung inkl.
  * Bearbeitungsrecht und Dateifreigabe (Filemount), Request-Token, PDF muss die
@@ -139,7 +139,7 @@ class ClientPreviewController
         return new JsonResponse(['ok' => true, 'page' => $page]);
     }
 
-    private function validatePath(string $path): string|JsonResponse
+    private function validatePath(string $path): JsonResponse|string
     {
         $relative = Path::canonicalize($path);
 
@@ -190,7 +190,7 @@ class ClientPreviewController
         return $text !== $id ? $text : vsprintf($fallback[$key] ?? $key, $parameters);
     }
 
-    public static function formatBytes(int|float $bytes): string
+    public static function formatBytes(float|int $bytes): string
     {
         if ($bytes >= 1048576) {
             return round($bytes / 1048576, 1).' MB';

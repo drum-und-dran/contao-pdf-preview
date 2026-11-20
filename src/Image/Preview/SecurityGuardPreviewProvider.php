@@ -68,6 +68,7 @@ class SecurityGuardPreviewProvider implements PreviewProviderInterface
         }
 
         $head = (string) fread($handle, 1024);
+
         fclose($handle);
 
         return str_contains($head, '%PDF-');

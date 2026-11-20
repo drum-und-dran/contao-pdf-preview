@@ -130,7 +130,17 @@ If the PDF was blocked by the security check, it cannot be selected.
 
 **When saving, the message "was blocked by the security check" appears.**
 The PDF contains something dangerous or unusual.
+The message names the exact reason.
 Use a different PDF or ask the webmaster.
+After a review, the webmaster can approve harmless files.
+
+**The file manager shows a notice about form JavaScript.**
+That is not an error. Fillable forms contain small scripts, e.g. for date fields.
+The PDF can be used as usual.
+
+**The file manager says "The hosting limits the PDF preview".**
+Clicking the notice shows which limit of the web hosting is affected.
+The PDF preview still works. The notice should be passed on to the webmaster.
 
 **The file manager says "rendering in the browser now".**
 That's normal. Wait a few seconds until the image appears.

@@ -8,9 +8,10 @@ declare(strict_types=1);
  * @license MIT
  */
 
-// Die Felder werden nur bei PDF-Dateien eingeblendet (FilesListener::adjustPalette).
-// Der Bildausschnitt wird – wie bei Bildern im Contao-Standard – in den Feldern
-// importantPartX/Y/Width/Height gespeichert und mit Contaos eigenem Editor bearbeitet.
+// Die Felder werden nur bei PDF-Dateien eingeblendet
+// (FilesListener::adjustPalette). Der Bildausschnitt wird – wie bei Bildern im
+// Contao-Standard – in den Feldern importantPartX/Y/Width/Height gespeichert
+// und mit Contaos eigenem Editor bearbeitet.
 $GLOBALS['TL_DCA']['tl_files']['fields']['pdfPreviewPages'] = [
     'inputType' => 'text',
     'eval' => ['maxlength' => 255, 'tl_class' => 'w50 clr', 'decodeEntities' => true, 'placeholder' => '1'],
@@ -23,7 +24,8 @@ $GLOBALS['TL_DCA']['tl_files']['fields']['pdfPreviewImage'] = [
     'sql' => 'binary(16) NULL',
 ];
 
-// Vorschau mit Contaos Editor für den wichtigen Bereich (keine eigene Datenbankspalte)
+// Vorschau mit Contaos Editor für den wichtigen Bereich (keine eigene
+// Datenbankspalte)
 $GLOBALS['TL_DCA']['tl_files']['fields']['pdfPreview'] = [
     'exclude' => false,
 ];

@@ -13,15 +13,16 @@ namespace Dud\ContaoPdfPreview\EventListener;
 use Contao\CoreBundle\DependencyInjection\Attribute\AsHook;
 use Contao\CoreBundle\Framework\ContaoFramework;
 use Contao\Message;
+use Dud\ContaoPdfPreview\Security\BlockedPdfRegistry;
 use Dud\ContaoPdfPreview\Security\PdfSecurityScanner;
 use Dud\ContaoPdfPreview\Security\ScanReason;
 use Symfony\Component\Filesystem\Path;
 
 /**
  * PDFs werden ganz normal über die Contao-Dateiverwaltung hochgeladen. Direkt
- * nach dem Upload prüfen wir sie und informieren den Redakteur, falls eine
- * Datei blockiert wird. Die Datei selbst wird nicht verändert oder gelöscht,
- * aber nie als Bild verarbeitet.
+ * nach dem Upload prüfen wir sie und informieren den Redakteur, falls eine Datei
+ * blockiert wird. Die Datei selbst wird nicht verändert oder gelöscht, aber nie
+ * als Bild verarbeitet.
  */
 class UploadListener
 {
@@ -29,6 +30,7 @@ class UploadListener
         private readonly PdfSecurityScanner $scanner,
         private readonly ContaoFramework $framework,
         private readonly string $projectDir,
+        private readonly BlockedPdfRegistry|null $registry = null,
     ) {
     }
 
@@ -50,12 +52,21 @@ class UploadListener
             // Ohne Cache prüfen: Die Datei ist neu
             $result = $this->scanner->scan(Path::join($this->projectDir, (string) $file), false);
 
+            $this->registry?->update((string) $file, $result);
+
             if (!$result->safe) {
                 $this->framework->initialize();
                 $this->framework->getAdapter(Message::class)->addError(\sprintf(
                     $GLOBALS['TL_LANG']['ERR']['dudPdfUploadBlocked'] ?? 'The uploaded PDF "%s" was blocked by the security check: %s',
                     $file,
                     ScanReason::formatAll($result->reasons),
+                ));
+            } elseif ($result->notices) {
+                $this->framework->initialize();
+                $this->framework->getAdapter(Message::class)->addInfo(\sprintf(
+                    $GLOBALS['TL_LANG']['ERR']['dudPdfUploadNotice'] ?? 'The uploaded PDF "%s" was checked and can be used: %s',
+                    $file,
+                    ScanReason::formatAll($result->notices),
                 ));
             }
         }

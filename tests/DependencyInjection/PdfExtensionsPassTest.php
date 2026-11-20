@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+/*
+ * Contao PDF Preview – (c) Gunnar Haeuschkel / Drum und Dran, https://drum-und-dran.de
+ *
+ * @license MIT
+ */
+
 namespace Dud\ContaoPdfPreview\Tests\DependencyInjection;
 
 use Dud\ContaoPdfPreview\DependencyInjection\Compiler\PdfExtensionsPass;
